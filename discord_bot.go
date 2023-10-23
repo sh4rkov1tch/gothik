@@ -11,6 +11,12 @@ import (
 	"github.com/joho/godotenv"
 )
 
+type DiscordBot struct {
+	token string
+	s *discordgo.Session
+	tiktok_cmd *discordgo.ApplicationCommand
+}
+
 func discord_get_token() string {
 	env_var := os.Getenv("DISCORD_BOT_TOKEN")
 	if env_var != "" {
@@ -66,11 +72,19 @@ func discord_prepare_images(url string, user_id string, json *simplejson.Json) *
 		Embeds: []*discordgo.MessageEmbed{},
 	}
 	imgs := tiktok_extract_images(json)
+
 	var fulldesc string
 	if user_id != "" {
 		fulldesc = fmt.Sprintf("Requested by <@%s>\n%s\n[Music link](%s)", user_id, imgs.desc, imgs.music_url)
 	} else {
 		fulldesc = imgs.desc
+	}
+	
+	music_reader := imgs.get_music_reader()
+	music_file := discordgo.File{
+		Name: fmt.Sprintf("%s_music.mp3", imgs.id),
+		ContentType: "audio/mp3",
+		Reader: music_reader,
 	}
 
 	for n, img := range imgs.urls {
@@ -88,6 +102,9 @@ func discord_prepare_images(url string, user_id string, json *simplejson.Json) *
 		}
 
 		msg.Embeds = append(msg.Embeds, embed)
+		msg.Files = []*discordgo.File{
+			&music_file,
+		}
 	}
 
 	return msg
@@ -168,13 +185,18 @@ func discord_tiktok_slash_command(s *discordgo.Session, i *discordgo.Interaction
 	}
 }
 
-func discord_init_bot(token string) (*discordgo.Session, *discordgo.ApplicationCommand) {
-	bot, err := discordgo.New("Bot " + token)
+func discord_init_bot() DiscordBot {
+	d := DiscordBot{
+		token: discord_get_token(),
+	}
+
+	var err error
+	d.s, err = discordgo.New("Bot " + d.token)
 	if err != nil {
 		log.Fatal("Couldn't initialize Discord bot")
 	}
 
-	command := discordgo.ApplicationCommand{
+	command := &discordgo.ApplicationCommand{
 		Name:        "tiktok",
 		Description: "Embeds a TikTok video with a direct link to it",
 		Options: []*discordgo.ApplicationCommandOption{
@@ -187,28 +209,28 @@ func discord_init_bot(token string) (*discordgo.Session, *discordgo.ApplicationC
 		},
 	}
 
-	bot.AddHandler(func(s *discordgo.Session, r *discordgo.Ready) {
+	d.s.AddHandler(func(s *discordgo.Session, r *discordgo.Ready) {
 		log.Printf("Logged in as %s\n", s.State.User.Username)
 	})
 
-	err = bot.Open()
+	err = d.s.Open()
 	if err != nil {
 		log.Fatalf("Couldn't open session: %s", err)
 	}
 
 	log.Println("Adding command")
-	bot.AddHandler(discord_tiktok_slash_command)
-	bot.AddHandler(discord_autodetect_link)
-	cmd_tiktok, err := bot.ApplicationCommandCreate(bot.State.User.ID, "", &command)
+	d.s.AddHandler(discord_tiktok_slash_command)
+	d.s.AddHandler(discord_autodetect_link)
+	d.tiktok_cmd, err = d.s.ApplicationCommandCreate(d.s.State.User.ID, "", command)
 	if err != nil {
-		log.Fatalf("Couldn't add command %s: %s", cmd_tiktok.Name, err)
+		log.Fatalf("Couldn't add command %s: %s", d.tiktok_cmd.Name, err)
 	}
 
-	return bot, cmd_tiktok
+	return d
 }
 
-func discord_run_bot(bot *discordgo.Session, command *discordgo.ApplicationCommand) {
-	defer bot.Close()
+func (d DiscordBot) run() {
+	defer d.s.Close()
 
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt)
@@ -216,5 +238,5 @@ func discord_run_bot(bot *discordgo.Session, command *discordgo.ApplicationComma
 	<-stop
 
 	log.Println("Removing command")
-	bot.ApplicationCommandDelete(bot.State.User.ID, "", command.ID)
+	d.s.ApplicationCommandDelete(d.s.State.User.ID, "", d.tiktok_cmd.ID)
 }

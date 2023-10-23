@@ -29,21 +29,26 @@ type TiktokImages struct {
 	desc      string
 }
 
-/*
-This function returns the HTTP Body reader for the raw mp4 link from a TiktokVideo struct
-*/
-func (t TiktokVideo) get_video_reader() io.Reader {
-	res, err := http.Get(t.url)
+// This function returns the HTTP Body reader for the raw mp4 link from a TiktokVideo struct
+func (v TiktokVideo) get_video_reader() io.Reader {
+	res, err := http.Get(v.url)
 	if err != nil {
-		log.Printf("Couldn't download video %s\n", t.id)
+		log.Printf("Couldn't download video %s\n", v.id)
 	}
 
 	return res.Body
 }
 
-/*
-This function matches and gets the URL from a string using regexes
-*/
+func (i TiktokImages) get_music_reader() io.Reader {
+	res, err := http.Get(i.music_url)
+	if err != nil {
+		log.Printf("Couldn't downlaod music %s\n", i.id)
+	}
+	
+	return res.Body
+}
+
+// This function matches and gets the URL from a string using regexes
 func tiktok_is_valid(str string) string {
 	reg, _ := regexp.Compile("https://vm.tiktok\\.com\\/{1}[a-zA-Z0-9]{9}[\\/]{0,1}|(https:\\/\\/www\\.tiktok\\.com\\/@[a-zA-Z0-9._]{0,32}\\/video\\/[0-9]{19}[?]{0,1}.{0,40})")
 
